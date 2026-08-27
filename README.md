@@ -9,11 +9,87 @@ of each output and draws a picture on it.
 | `ravencanvasd` | the daemon: one layer surface per output, a config file, a control socket |
 | `ravencanvas` | the CLI that talks to it |
 
+## Installing
+
 ```bash
-imlazy build            # cargo build --release
-sudo imlazy install     # into /usr, and started with your session
-imlazy preview          # one frame to a PNG, no compositor needed
+imlazy install          # cargo build --release, then sudo ./scripts/install.sh
 ```
+
+No `sudo` in front of `imlazy`: the sudo is inside the command, so it applies
+to the install script and not to the `cargo build` that runs first. Prefixing
+it builds as root and leaves root-owned files in `target/` that your next
+ordinary build cannot overwrite.
+
+That builds release, installs `ravencanvasd`, `ravencanvas` and
+`raven-set-wallpaper` into `/usr/bin`, puts the reference config at
+`/etc/raven/canvas.toml` if there is not one already, creates
+`/usr/share/wallpaper` and `set/`, and adds a short marked block to
+`/usr/sbin/raven-wayland-session` so the daemon starts with your session.
+
+That block goes **before** the script's final `exec` — everything after an
+`exec` is unreachable — and the daemon is backgrounded there for the same
+reason the session bus above it is. It has to be running before the compositor
+it connects to, and it retries the connection for ten seconds, which is what
+makes starting first safe rather than merely early. A backup is kept at
+`raven-wayland-session.pre-ravencanvas`; `WIRE_SESSION=0` skips the edit
+entirely.
+
+### Seeing it without logging out
+
+The wiring only matters at the next login. To look at it now, start the daemon
+in the session you are already in — it is an ordinary layer-shell client, so
+there is nothing to restart and no nested compositor to set up:
+
+```bash
+ravencanvasd &
+```
+
+With nothing in `/usr/share/wallpaper/set` you get the built-in gradient. Give
+it a picture, and because the daemon watches `set/`, the desktop changes within
+a moment:
+
+```bash
+sudo raven-set-wallpaper ~/pictures/cliff.jpg
+raven-set-wallpaper status          # what is set, and what would override it
+```
+
+That is the *machine's* wallpaper, so the login screen gets the same picture on
+its next start. For yourself alone, use `ravencanvas set` instead — see below.
+
+### If the login screen does not follow
+
+Check for an override first:
+
+```bash
+raven-set-wallpaper status
+```
+
+The usual culprit is `/etc/raven/login.toml` with an uncommented
+`wallpaper = "..."`. That names a picture for the login screen *specifically*,
+which overrides the machine's, so the two stop agreeing. Comment it out and the
+greeter falls back to `set/` — which is the whole point of the contract. The
+same goes for a `[background]` in `/etc/raven/canvas.toml`, which overrides it
+for every user on this machine, and one in `~/.config/raven/canvas.toml`, which
+overrides it for you.
+
+A wallpaper also has to be readable by the accounts that open it — this user's
+`ravencanvasd` and the greeter's own unprivileged account. Somewhere under
+`/usr/share` is right; a picture inside a home directory is not going to work
+for the login screen. `raven-set-wallpaper` copies into the library and fixes
+the mode for you, which is most of why it exists.
+
+### Uninstalling
+
+```bash
+imlazy uninstall        # binaries and the session wiring
+imlazy purge            # ...and /etc/raven/canvas.toml
+```
+
+Uninstall cuts its block out of the session script by its markers rather than
+restoring the backup, so a change somebody else made to that file since is not
+silently undone; it returns the file byte for byte. Neither command touches
+`/usr/share/wallpaper` — those are your pictures, and the login screen is still
+reading `set/` after RavenCanvas is gone.
 
 ## The picture it draws
 
@@ -170,11 +246,15 @@ CLI go through exactly one parser in the daemon and cannot disagree about what
 ## Development
 
 ```bash
+imlazy build        # cargo build --release
 imlazy run          # against the session you are already in
 imlazy preview      # scene=plasma imlazy preview
 imlazy check        # fmt, clippy -D warnings, the unsafe check, tests
 imlazy test
+imlazy fmt
 ```
+
+`imlazy` with no command lists them all.
 
 `--preview` renders one frame to a PNG with no compositor, no socket and no
 config, which is the fastest way to look at a scene:
