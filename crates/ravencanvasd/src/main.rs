@@ -51,7 +51,7 @@ mod resolve;
 mod screen;
 mod watch;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -255,18 +255,52 @@ fn run() -> Result<()> {
 /// race on every boot; retrying until a deadline turns that race into a
 /// non-event.
 ///
-/// A missing `$WAYLAND_DISPLAY` is not retried. That is not a race, it is a
-/// wallpaper daemon started outside a session, and waiting ten seconds to say
-/// so helps nobody.
+/// # Why `$WAYLAND_DISPLAY` is not required
+///
+/// It used to be: an unset variable exited immediately, on the reasoning that
+/// it meant a wallpaper daemon started outside a session rather than a race,
+/// and that waiting ten seconds to say so helped nobody.
+///
+/// That reasoning was backwards for the way this daemon actually starts. The
+/// variable is set by whoever launches a client *inside* a session, and this
+/// process is launched by the session script one line above the `exec` of the
+/// compositor it is waiting for -- so at that moment nothing has set it, and
+/// nothing can afterwards, because a running process's environment is fixed.
+/// The guard therefore fired on every boot, about a tenth of a second in, and
+/// the retry loop underneath it was unreachable in the one deployment the
+/// documentation above describes. What it left behind was a plain desktop, a
+/// single ERROR line in the session log, and a zombie under the compositor.
+///
+/// An unset variable now means "find the socket yourself". The name cannot be
+/// assumed: the compositor binds the first free number, so a stale lock from a
+/// previous session puts it on `wayland-1` rather than `wayland-0`.
+///
+/// The case the old guard was really about -- no session at all -- is already
+/// caught before this is reached, and with a better message: `run` binds the
+/// control socket first, and that needs `$XDG_RUNTIME_DIR`.
 fn connect(timeout: Duration) -> Result<Connection> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_none_or(|value| value.is_empty()) {
-        bail!("WAYLAND_DISPLAY is not set; ravencanvasd is a Wayland client and needs a session");
-    }
+    // Decided once, outside the loop: neither input can change while this
+    // process runs, so re-reading them on every retry would only invite the
+    // reader to think they might.
+    let named = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty());
+    let route = match (named, std::env::var_os("XDG_RUNTIME_DIR")) {
+        (true, _) => Route::Named,
+        (false, Some(dir)) => Route::Search(PathBuf::from(dir)),
+        (false, None) => bail!(
+            "neither $WAYLAND_DISPLAY nor $XDG_RUNTIME_DIR is set; \
+             ravencanvasd is a Wayland client and needs a session"
+        ),
+    };
 
     let deadline = Instant::now() + timeout;
     let mut waited = false;
     loop {
-        match Connection::connect_to_env() {
+        let attempt = match &route {
+            Route::Named => Connection::connect_to_env().context("cannot connect to $WAYLAND_DISPLAY"),
+            Route::Search(dir) => discover(dir),
+        };
+
+        match attempt {
             Ok(connection) => {
                 if waited {
                     tracing::info!("the compositor is up");
@@ -274,7 +308,7 @@ fn connect(timeout: Duration) -> Result<Connection> {
                 return Ok(connection);
             }
             Err(e) if Instant::now() >= deadline => {
-                return Err(anyhow::Error::new(e).context(format!(
+                return Err(e.context(format!(
                     "no Wayland compositor answered within {}s",
                     timeout.as_secs()
                 )));
@@ -291,4 +325,59 @@ fn connect(timeout: Duration) -> Result<Connection> {
             }
         }
     }
+}
+
+/// How the compositor's socket is going to be found.
+enum Route {
+    /// `$WAYLAND_DISPLAY` named it: an ordinary client started inside a session.
+    Named,
+    /// Nothing named it, so look for it in the runtime directory.
+    Search(PathBuf),
+}
+
+/// Connect to whichever `wayland-N` socket in `runtime_dir` answers.
+///
+/// For the start-order case, where this process is running before the
+/// compositor and so was never told a name. Every candidate is tried in turn
+/// rather than the lowest one guessed at: `wayland-0` is the usual answer and
+/// not a safe assumption, and on a machine whose compositor took `wayland-1`
+/// guessing is indistinguishable from the compositor not being up yet.
+///
+/// The lock files sharing the directory are skipped by the digits check --
+/// `wayland-1.lock` is not all digits after the dash.
+fn discover(runtime_dir: &Path) -> Result<Connection> {
+    let entries = std::fs::read_dir(runtime_dir)
+        .with_context(|| format!("cannot read {}", runtime_dir.display()))?;
+
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            name.strip_prefix("wayland-")
+                .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .collect();
+    // So that wayland-0 is preferred to wayland-1 when a session really does
+    // have two, rather than the answer depending on directory order.
+    names.sort();
+
+    for name in &names {
+        let path = runtime_dir.join(name);
+        let Ok(stream) = std::os::unix::net::UnixStream::connect(&path) else {
+            continue;
+        };
+        match Connection::from_socket(stream) {
+            Ok(connection) => {
+                tracing::info!(socket = %name, "found the compositor's socket");
+                return Ok(connection);
+            }
+            Err(e) => tracing::debug!(socket = %name, error = %e, "socket did not answer"),
+        }
+    }
+
+    bail!(
+        "no wayland-N socket in {} answered ({} tried)",
+        runtime_dir.display(),
+        names.len()
+    )
 }
