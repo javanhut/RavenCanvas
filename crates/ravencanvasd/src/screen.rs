@@ -232,13 +232,16 @@ impl Screen {
         }
         self.scale = scale;
         // Told to the compositor so it knows the buffer is already at this
-        // density and does not resample it. The buffer size does not change:
-        // layer-shell configures in surface-local coordinates and huginn
-        // advertises an integer scale, so `width * scale` is what a
-        // hidpi-aware client would allocate -- but huginn also lays the
-        // desktop out at a fractional scale and resamples, so following its
-        // advertised integer scale is what `docs/integration.md` asks for.
-        let _ = self.layer.set_buffer_scale(scale.max(1) as u32);
+        // density and does not resample it -- and that is a promise the
+        // buffer has to keep. A surface's size is its buffer divided by this
+        // number, so declaring a scale without allocating `width * scale`
+        // pixels shrinks the wallpaper to that fraction of the output and
+        // leaves the rest to whatever huginn paints underneath. layer-shell
+        // configures in surface-local coordinates, so the multiplication
+        // happens in `draw`.
+        let _ = self.layer.set_buffer_scale(scale as u32);
+        // Every scaled copy was for the old buffer size.
+        self.cache.clear();
         true
     }
 
@@ -253,7 +256,11 @@ impl Screen {
             return false;
         }
 
-        let (width, height) = (self.width, self.height);
+        // Surface-local size times the scale: the buffer is in physical
+        // pixels, the configure was in logical ones. On a 1536x864 @2x panel
+        // that is a 3072x1728 buffer, and the picture is fitted to the pixels
+        // the panel actually has rather than upscaled from a quarter of them.
+        let (width, height) = (self.width * self.scale, self.height * self.scale);
         let stride = width * 4;
 
         // Xrgb8888: this surface is opaque, and saying so lets the compositor
