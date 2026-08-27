@@ -1,0 +1,75 @@
+# RavenCanvas's build interface.
+#
+# The daemon is developed against the session you are already in -- it is an
+# ordinary layer-shell client, so `imlazy run` puts a wallpaper behind your
+# live desktop without a nested compositor or a reboot. `imlazy preview`
+# renders a frame to a PNG with no compositor at all.
+
+[settings]
+default = "help"
+
+[commands.help]
+desc = "Show RavenCanvas's commands"
+run = ["imlazy list"]
+
+[commands.build]
+desc = "Build the daemon and the CLI, optimised"
+run = ["cargo build --release"]
+
+[commands.run]
+desc = "Run the daemon against the session you are in, in the foreground"
+run = ["cargo run -q -p ravencanvasd"]
+
+[commands.preview]
+# imlazy has no variables of its own here, so the scene comes from the shell:
+# `scene=aurora imlazy preview`. One of gradient, aurora, plasma, starfield.
+desc = "Render one frame to /tmp/ravencanvas.png with no compositor"
+run = [
+    "cargo run -q -p ravencanvasd -- --preview /tmp/ravencanvas.png 1920x1080 4 ${scene:-aurora}",
+]
+
+[commands.test]
+desc = "Run the whole test suite"
+run = ["cargo test --workspace"]
+
+[commands.check]
+desc = "Everything CI runs: format, lints, the unsafe check, tests"
+run = [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "./scripts/check-unsafe.sh",
+    "cargo test --workspace",
+]
+
+[commands.fmt]
+desc = "Format the workspace"
+run = ["cargo fmt --all"]
+
+[commands.unsafe]
+desc = "Prove no crate has escaped the unsafe forbid"
+run = ["./scripts/check-unsafe.sh"]
+alias = ["check-unsafe"]
+
+[commands.install]
+desc = "Build release, install into /usr, and start it with the session (needs root)"
+dep = ["build"]
+run = ["sudo ./scripts/install.sh"]
+
+# Spelled out because it must exist. Without it, imlazy fuzzy-matches
+# `uninstall` to `install` and cheerfully installs what you asked it to remove.
+[commands.uninstall]
+desc = "Remove the binaries and unwire the session (needs root)"
+run = ["sudo ./scripts/uninstall.sh"]
+
+[commands.purge]
+desc = "Uninstall, and also remove /etc/raven/canvas.toml"
+run = ["sudo ./scripts/uninstall.sh --purge"]
+
+[commands.wallpaper]
+# `imlazy wallpaper` with no argument prints what is set; with one, sets it.
+desc = "Set or show the machine's wallpaper -- the desktop and login screen both"
+run = ["sudo ./scripts/set-wallpaper.sh ${image:-status}"]
+
+[commands.clean]
+desc = "Remove build output"
+run = ["cargo clean"]

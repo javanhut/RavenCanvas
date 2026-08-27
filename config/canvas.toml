@@ -1,0 +1,103 @@
+# /etc/raven/canvas.toml -- ravencanvasd, the RavenLinux wallpaper daemon.
+#
+# Every value here is a default. The whole file is optional and so is every
+# key in it, so an installed machine needs none of this -- it is shipped as a
+# reference for what exists, not as a file you must maintain.
+#
+# A file that is present but does not parse is NOT fatal, which is the opposite
+# of ravend's login.toml. A wallpaper is not a policy, this daemon reloads on
+# every edit, and the moment you are most likely to have a broken file is
+# halfway through editing one. So a bad file logs a warning and leaves what is
+# already on screen.
+#
+# Your own file at ~/.config/raven/canvas.toml wins over this one outright --
+# not field by field, the whole file. If it exists, this one is not read.
+
+# ---------------------------------------------------------------------------
+# [background] -- deliberately left commented out.
+# ---------------------------------------------------------------------------
+#
+# This is not an oversight and please think before uncommenting it. With no
+# [background] anywhere, the daemon draws the wallpaper this machine has set:
+#
+#     /usr/share/wallpaper/set/wallpaper.<ext>
+#
+# which is the same file RavenLogin's greeter draws the login screen on. That
+# is the contract that makes the login screen and the desktop show one picture,
+# and it is worth more than a default in a config file. Writing a [background]
+# here breaks it for every user on the machine.
+#
+# So: to change the picture for the whole machine, change the machine's
+# wallpaper -- put the file in set/, under the name `wallpaper`, keeping its
+# extension. A symlink counts, and is the tidier way:
+#
+#     sudo ./scripts/set-wallpaper.sh /path/to/image
+#
+# or by hand, which is all that script does:
+#
+#     sudo rm -f /usr/share/wallpaper/set/wallpaper.*
+#     sudo ln -s ../cliff.jpg /usr/share/wallpaper/set/wallpaper.jpg
+#
+# For one user only, write ~/.config/raven/canvas.toml instead -- which is what
+# `ravencanvas set --persist` does for you, and it wins over the machine's.
+#
+# The modes, for when you do want one:
+#
+#   One flat colour. #RGB, #RRGGBB or #AARRGGBB.
+#
+#     [background]
+#     mode = "color"
+#     color = "#16161F"
+#
+#   One image. PNG or JPEG, decided by the file's first bytes and not by its
+#   extension. `fit` is cover, contain, stretch, center or tile; `background`
+#   is shown wherever the image does not reach, under contain and center.
+#
+#     [background]
+#     mode = "image"
+#     path = "/usr/share/wallpaper/cliff.jpg"
+#     fit = "cover"
+#     background = "#16161F"
+#
+#   Every image in a directory, in turn. `interval` is seconds and `crossfade`
+#   is milliseconds; a crossfade of 0 cuts. The directory is watched, so
+#   pictures added to it join the rotation without a restart.
+#
+#     [background]
+#     mode = "slideshow"
+#     directory = "/usr/share/wallpaper"
+#     interval = 900
+#     shuffle = false
+#     crossfade = 800
+#     fit = "cover"
+#     background = "#16161F"
+#
+#   Something computed, with no file on disk at all. One of gradient, aurora,
+#   plasma or starfield. `speed = 0.0` freezes it, which costs nothing at all
+#   afterwards -- the daemon arms no timer for a still background.
+#
+#     [background]
+#     mode = "scene"
+#     name = "aurora"
+#     speed = 1.0
+#     palette = ["#0A0A12", "#7AA2F7", "#BB9AF7"]
+
+[render]
+# Frames a second for an animated background.
+#
+# Thirty, not sixty. This is a wallpaper: it is behind everything, it is mostly
+# covered, and nothing in it moves fast enough for the difference to be
+# visible. Halving the rate halves what it costs.
+#
+# It does not apply to a still background, which is drawn once and then costs
+# nothing -- see the note on occlusion in README.md.
+fps = 30
+
+# The long edge of the buffer a scene is drawn into before it is upscaled, or
+# 0 for the scene's own choice.
+#
+# This is the dial to turn when a scene costs too much on a particular machine,
+# and it is quadratic: halving it quarters the work. Scenes are smooth fields
+# of colour, so drawing them at 720 and upscaling is close to free visually and
+# is not a compromise the way it would be for a photograph.
+detail = 0

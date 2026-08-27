@@ -241,7 +241,7 @@ mod tests {
     fn a_new_file_is_noticed() {
         let scratch = Scratch::new("create");
         let mut watcher = Watcher::new().expect("inotify");
-        watcher.watch(&[scratch.0.clone()]);
+        watcher.watch(std::slice::from_ref(&scratch.0));
 
         std::fs::write(scratch.0.join("canvas.toml"), "[render]\nfps = 10\n").expect("write");
 
@@ -262,7 +262,7 @@ mod tests {
         std::fs::write(&target, "old").expect("write");
 
         let mut watcher = Watcher::new().expect("inotify");
-        watcher.watch(&[scratch.0.clone()]);
+        watcher.watch(std::slice::from_ref(&scratch.0));
 
         let temporary = scratch.0.join("canvas.toml.new");
         std::fs::write(&temporary, "new").expect("write");
@@ -282,7 +282,7 @@ mod tests {
         std::fs::write(&target, "x").expect("write");
 
         let mut watcher = Watcher::new().expect("inotify");
-        watcher.watch(&[scratch.0.clone()]);
+        watcher.watch(std::slice::from_ref(&scratch.0));
         std::fs::remove_file(&target).expect("remove");
 
         assert!(wait_for_change(&mut watcher).contains(&target));
@@ -292,7 +292,7 @@ mod tests {
     fn draining_with_nothing_to_report_returns_nothing_and_does_not_block() {
         let scratch = Scratch::new("quiet");
         let mut watcher = Watcher::new().expect("inotify");
-        watcher.watch(&[scratch.0.clone()]);
+        watcher.watch(std::slice::from_ref(&scratch.0));
         assert!(watcher.drain().is_empty());
     }
 
@@ -317,8 +317,8 @@ mod tests {
         let second = Scratch::new("rewatch-b");
 
         let mut watcher = Watcher::new().expect("inotify");
-        watcher.watch(&[first.0.clone()]);
-        watcher.watch(&[second.0.clone()]);
+        watcher.watch(std::slice::from_ref(&first.0));
+        watcher.watch(std::slice::from_ref(&second.0));
 
         // A change in the directory that is no longer watched must be silent.
         std::fs::write(first.0.join("ignored.png"), "x").expect("write");

@@ -306,7 +306,7 @@ mod tests {
             }
         });
 
-        let mut data = vec![0u8; 32 * 1 * 4];
+        let mut data = vec![0u8; crate::buffer_len(32, 1).expect("a 32x1 buffer")];
         field.upscale_into(&mut Canvas::new(&mut data, 32, 1));
 
         let row: Vec<u8> = (0..32).map(|x| pixel(&data, 32, x, 0).0).collect();
