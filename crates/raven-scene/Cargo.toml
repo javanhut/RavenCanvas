@@ -1,0 +1,15 @@
+[package]
+name = "raven-scene"
+description = "Procedural animated backgrounds for the Raven wallpaper engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+raven-paint.workspace = true
+
+[lints]
+workspace = true

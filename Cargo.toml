@@ -1,0 +1,97 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/raven-paint",
+    "crates/raven-scene",
+    "crates/raven-canvas-proto",
+    "crates/ravencanvasd",
+    "crates/ravencanvas",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/javanhutchinson/RavenCanvas"
+
+# Inherited by every crate via `[lints] workspace = true`. `forbid` cannot be
+# lifted by an #[allow] anywhere inside a crate, so the only way to get unsafe
+# into this workspace is to drop the `[lints]` opt-in from a manifest -- which
+# is what `scripts/check-unsafe.sh` exists to catch.
+#
+# Unlike RavenGUI and RavenLogin there is no quarantine crate here, and there
+# should never be one. This process decodes images off disk and writes into a
+# buffer the compositor also maps; both of those are exactly the places a
+# memory-safety bug turns into somebody else's problem. Everything it needs
+# from the kernel, `rustix` already exposes safely.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+todo = "warn"
+dbg_macro = "warn"
+
+[workspace.dependencies]
+raven-paint = { path = "crates/raven-paint" }
+raven-scene = { path = "crates/raven-scene" }
+raven-canvas-proto = { path = "crates/raven-canvas-proto" }
+
+# Image decoding. The same two narrow decoders RavenLogin's greeter settled on,
+# for the same reason: between them PNG and JPEG cover every wallpaper anybody
+# actually has, and `image` would pull a dozen more formats -- and their
+# parsers -- into a process that runs for the whole life of a login session and
+# opens whatever file a user points it at.
+#
+# zune-jpeg drops its default features because those are the SIMD paths. A
+# decode happens when the wallpaper changes, which is at most once every few
+# minutes on a slideshow; there is no throughput here worth a wider unsafe
+# surface underneath us.
+#
+# `png` is also the encoder for `--preview`, which is why it keeps its default
+# features while zune does not.
+png = "0.18"
+zune-jpeg = { version = "0.5", default-features = false, features = ["std"] }
+
+# The Wayland client. This is a layer-shell client and nothing more; see
+# `crates/ravencanvasd/src/screen.rs` for why the wallpaper is a client at all
+# rather than something huginn draws.
+smithay-client-toolkit = "0.21"
+# The event loop. Four things wake this process -- Wayland, the control socket,
+# an inotify event and a timer -- and hand-rolling a poll over four descriptors
+# is how you end up with a slideshow that stops advancing while nothing else is
+# happening. RavenGUI already runs on calloop 0.14, so this is the loop the
+# rest of the desktop is written against.
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+# Watching the config files. The safe wrapper rather than raw
+# `inotify_add_watch`, because this workspace forbids unsafe.
+inotify = { version = "0.11", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.dev]
+# A scene rendered at opt-level 0 is a slideshow of its own. Deps are rebuilt
+# rarely, so they are always optimized; our own crates stay at the default so
+# backtraces and debuggers still work.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+# This process is resident for the whole life of a session and is idle for
+# almost all of it. Size keeps it out of the way; the one hot loop it has --
+# scene rendering -- is hot enough that "s" rather than "z" is where this
+# stops.
+opt-level = "s"
+lto = true
+strip = true

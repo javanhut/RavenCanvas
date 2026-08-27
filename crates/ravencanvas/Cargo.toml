@@ -1,0 +1,23 @@
+[package]
+name = "ravencanvas"
+description = "Talk to the RavenLinux wallpaper daemon."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "ravencanvas"
+path = "src/main.rs"
+
+[dependencies]
+# The protocol, and nothing else. No renderer, no image decoder, no Wayland:
+# this binary connects to a socket, sends one message and prints the reply, and
+# it should start instantly and weigh nothing.
+raven-canvas-proto.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

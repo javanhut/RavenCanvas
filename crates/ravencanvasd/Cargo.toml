@@ -1,0 +1,37 @@
+[package]
+name = "ravencanvasd"
+description = "The RavenLinux wallpaper daemon: a layer-shell client that draws the desktop background."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "ravencanvasd"
+path = "src/main.rs"
+
+[dependencies]
+raven-canvas-proto.workspace = true
+raven-paint.workspace = true
+raven-scene.workspace = true
+
+anyhow.workspace = true
+png.workspace = true
+serde = { workspace = true }
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# This daemon is Linux-only and unapologetically so: it is a Wayland client
+# that watches files with inotify and listens on a Unix socket. The parts worth
+# porting -- decoding, fitting, and every scene -- are in `raven-paint` and
+# `raven-scene`, which depend on none of this.
+calloop.workspace = true
+calloop-wayland-source.workspace = true
+inotify.workspace = true
+smithay-client-toolkit.workspace = true
+
+[lints]
+workspace = true
